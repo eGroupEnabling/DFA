@@ -1,0 +1,269 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "basics": [
+      {
+        "name": "deploymentTier",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Fabric Capacity",
+        "toolTip": "Choose whether to deploy a new Fabric capacity. Select None if you already have capacity or will activate a Fabric trial in the Fabric portal.",
+        "constraints": {
+          "allowedValues": [
+            {
+              "label": "None (Existing/Fabric Trial)",
+              "value": "none"
+            },
+            {
+              "label": "Initial (F2)",
+              "value": "initial"
+            },
+            {
+              "label": "Production (F4+)",
+              "value": "production"
+            }
+          ],
+          "required": true
+        }
+      },
+      {
+        "name": "customerContactSection",
+        "type": "Microsoft.Common.Section",
+        "label": "Contact information",
+        "elements": [
+          {
+            "name": "customerContactSummary",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This information is gathered for use by eGroup Enabling Technologies to track DFA installations and you may be contacted by our sales team. It will not be shared with third parties."
+            }
+          },
+          {
+            "name": "customerName",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Name",
+            "placeholder": "Jane Smith",
+            "toolTip": "Primary contact name for eGroup usage tracking and follow-up.",
+            "constraints": {
+              "required": true,
+              "regex": "^(?=.{1,100}$)(?!\\s)(?!.*\").*\\S$",
+              "validationMessage": "Enter a contact name"
+            }
+          },
+          {
+            "name": "customerEmail",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Email",
+            "placeholder": "name@contoso.com",
+            "toolTip": "Primary contact email for eGroup usage tracking and follow-up.",
+            "constraints": {
+              "required": true,
+              "regex": "^(?=.{3,254}$)[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+              "validationMessage": "Enter a valid email address"
+            }
+          },
+          {
+            "name": "customerPhone",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Phone",
+            "placeholder": "+1 555 777 0100",
+            "toolTip": "Optional contact phone number for eGroup usage tracking and follow-up.",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^[0-9()+\\- .]{7,25}$",
+              "validationMessage": "Enter a valid phone number or leave this field blank"
+            }
+          }
+        ]
+      }
+    ],
+    "steps": [
+      {
+        "name": "configuration",
+        "label": "Configuration",
+        "elements": [
+          {
+            "name": "resourceSettings",
+            "type": "Microsoft.Common.Section",
+            "label": "Resource configuration",
+            "elements": [
+              {
+                "name": "resourceNamePrefix",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Resource Name Prefix",
+                "placeholder": "mycompany",
+                "toolTip": "3-11 lowercase alphanumeric characters used in resource names such as {prefix}-{environment}-vnet and other resource-specific CAF patterns.",
+                "constraints": {
+                  "required": true,
+                  "regex": "^[a-z0-9]{3,11}$",
+                  "validationMessage": "Must be 3-11 lowercase alphanumeric characters"
+                }
+              },
+              {
+                "name": "environment",
+                "type": "Microsoft.Common.DropDown",
+                "label": "Environment",
+                "toolTip": "Environment designation used in names such as {prefix}-{environment}-vnet.",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Development (dev)",
+                      "value": "dev"
+                    },
+                    {
+                      "label": "Testing (test)",
+                      "value": "test"
+                    },
+                    {
+                      "label": "Production (prod)",
+                      "value": "prod"
+                    }
+                  ],
+                  "required": true
+                }
+              }
+            ]
+          },
+          {
+            "name": "networkSettings",
+            "type": "Microsoft.Common.Section",
+            "label": "Networking",
+            "elements": [
+              {
+                "name": "enablePrivateEndpoints",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Enable Private Endpoints",
+                "toolTip": "When checked, all services will use private connectivity via Azure Private Link"
+              }
+            ]
+          },
+          {
+            "name": "securitySettings",
+            "type": "Microsoft.Common.Section",
+            "label": "Security",
+            "elements": [
+              {
+                "name": "defenderSecurityConfiguration",
+                "type": "Microsoft.Common.DropDown",
+                "label": "Defender for Cloud Configuration",
+                "toolTip": "Applies Defender for Cloud pricing plans at the subscription scope. Choose Foundational CSPM (free), paid Defender CSPM plus Defender plans for deployed Azure resources, or leave Defender settings unchanged. If the subscription already uses paid Defender CSPM, choose Neither to preserve the current plan.",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "Defender Foundational CSPM (Free)",
+                      "value": "foundational"
+                    },
+                    {
+                      "label": "Defender CSPM + Defender Plans for Deployed Resources",
+                      "value": "standard"
+                    },
+                    {
+                      "label": "Neither (Do Not Configure Defender for Cloud)",
+                      "value": "none"
+                    }
+                  ],
+                  "required": true
+                },
+                "defaultValue": "none"
+              }
+            ]
+          },
+          {
+            "name": "integrationSettings",
+            "type": "Microsoft.Common.Section",
+            "label": "API integration",
+            "elements": [
+              {
+                "name": "enableApiIngestionFunction",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Deploy API Ingestion Function",
+                "toolTip": "Deploy a Function App to call an external API and store data locally"
+              },
+              {
+                "name": "externalApiBaseUrl",
+                "type": "Microsoft.Common.TextBox",
+                "label": "External API Base URL (Optional)",
+                "placeholder": "https://api.example.com",
+                "toolTip": "Base URL for the external API. Leave blank if not applicable.",
+                "constraints": {
+                  "required": false,
+                  "regex": "^$|^https://[A-Za-z0-9.-]{1,253}(?::\\d{1,5})?(?:/.{0,1792})?$",
+                  "validationMessage": "Enter a valid HTTPS URL or leave this field blank"
+                }
+              },
+              {
+                "name": "enableApiManagement",
+                "type": "Microsoft.Common.CheckBox",
+                "label": "Deploy API Management (Optional)",
+                "toolTip": "Deploy API Management if you require API publishing and governance"
+              }
+            ]
+          },
+          {
+            "name": "databaseSettings",
+            "type": "Microsoft.Common.Section",
+            "label": "Database configuration",
+            "elements": [
+              {
+                "name": "sqlAdministratorLogin",
+                "type": "Microsoft.Common.TextBox",
+                "label": "SQL Administrator Login",
+                "placeholder": "sqladmin",
+                "toolTip": "Administrator login for Azure SQL Database. Common reserved admin names are blocked.",
+                "constraints": {
+                  "required": true,
+                  "validations": [
+                    {
+                      "regex": "^(?!.*\\.$)[A-Za-z0-9_]{1,128}$",
+                      "message": "Must be 1-128 letters, numbers, or underscore, and can't end with a period"
+                    },
+                    {
+                      "isValid": "[not(contains(split('administrator|admin|user|user1|test|user2|test1|user3|admin1|1|123|a|actuser|adm|admin2|aspnet|backup|console|david|guest|john|owner|root|server|sql|support|support_388945a0|sys|test2|test3|user4|user5', '|'), toLower(steps('configuration').databaseSettings.sqlAdministratorLogin)))]",
+                      "message": "This admin login is blocked by Azure platform rules. Choose a different name"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "sqlAdministratorPassword",
+                "type": "Microsoft.Common.PasswordBox",
+                "label": {
+                  "password": "SQL Administrator Password",
+                  "confirmPassword": "Confirm Password"
+                },
+                "toolTip": "12-123 characters with uppercase, lowercase, number, and special character. Common weak passwords are blocked.",
+                "constraints": {
+                  "required": true,
+                  "regex": "^(?!(?:[Aa][Bb][Cc]@123|[Pp]@\\$\\$[Ww]0[Rr][Dd]|[Pp]@[Ss][Ss][Ww]0[Rr][Dd]|[Pp]@[Ss][Ss][Ww][Oo][Rr][Dd]123|[Pp][Aa]\\$\\$[Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss]@[Ww][Oo][Rr][Dd]1|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]!|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]1|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]22|[Ii][Ll][Oo][Vv][Ee][Yy][Oo][Uu]!)$)(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[\\W_])\\S{12,123}$",
+                  "validationMessage": "Password must be 12-123 characters with uppercase, lowercase, number, and special character, and can't be a common weak password"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "customerName": "[basics('customerContactSection').customerName]",
+      "customerEmail": "[basics('customerContactSection').customerEmail]",
+      "customerPhone": "[basics('customerContactSection').customerPhone]",
+      "resourceNamePrefix": "[steps('configuration').resourceSettings.resourceNamePrefix]",
+      "deploymentTier": "[basics('deploymentTier')]",
+      "environment": "[steps('configuration').resourceSettings.environment]",
+      "location": "[location()]",
+      "enablePrivateEndpoints": "[steps('configuration').networkSettings.enablePrivateEndpoints]",
+      "defenderSecurityConfiguration": "[steps('configuration').securitySettings.defenderSecurityConfiguration]",
+      "enableApiIngestionFunction": "[steps('configuration').integrationSettings.enableApiIngestionFunction]",
+      "externalApiBaseUrl": "[steps('configuration').integrationSettings.externalApiBaseUrl]",
+      "enableApiManagement": "[steps('configuration').integrationSettings.enableApiManagement]",
+      "sqlAdministratorLogin": "[steps('configuration').databaseSettings.sqlAdministratorLogin]",
+      "sqlAdministratorPassword": "[steps('configuration').databaseSettings.sqlAdministratorPassword]",
+      "tags": {
+        "solution": "DataFoundationAccelerator",
+        "version": "1.0.1",
+        "managed-by": "eGroup"
+      }
+    }
+  }
+}

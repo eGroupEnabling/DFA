@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Transparent background -->
+  <rect width="512" height="512" fill="none"/>
+
+  <!-- Base platform layer -->
+  <rect x="96" y="300" width="320" height="56" rx="12"
+        fill="#0A5ED7"/>
+
+  <!-- Middle analytics layer -->
+  <rect x="128" y="232" width="256" height="56" rx="12"
+        fill="#1187E6"/>
+
+  <!-- Upper governance layer -->
+  <rect x="160" y="164" width="192" height="56" rx="12"
+        fill="#1FB6FF"/>
+
+  <!-- Central secure core -->
+  <circle cx="256" cy="192" r="32"
+          fill="#0B2C4D"/>
+
+  <!-- Core highlight -->
+  <circle cx="256" cy="192" r="14"
+          fill="#FFFFFF" opacity="0.85"/>
+
+</svg>

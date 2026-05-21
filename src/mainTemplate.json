@@ -1,0 +1,1530 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Data Foundation Accelerator - Main Orchestration Template (All Tiers)",
+    "author": "eGroup",
+    "version": "1.0.1"
+  },
+  "parameters": {
+    "resourceNamePrefix": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 11,
+      "metadata": {
+        "description": "Prefix for all resource names (3-11 characters, lowercase alphanumeric). Resource names follow resource-specific CAF-compliant patterns."
+      }
+    },
+    "deploymentTier": {
+      "type": "string",
+      "defaultValue": "initial",
+      "allowedValues": ["none", "initial", "production"],
+      "metadata": {
+        "description": "Fabric capacity option that determines whether to deploy a new Fabric capacity and how dependent resources are sized"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": ["dev", "test", "prod"],
+      "metadata": {
+        "description": "Environment designation for naming conventions"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "deploymentTimestamp": {
+      "type": "string",
+      "defaultValue": "[utcNow('u')]",
+      "metadata": {
+        "description": "System-generated UTC timestamp used for installation tracking"
+      }
+    },
+    "enablePrivateEndpoints": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable private endpoints for private connectivity"
+      }
+    },
+    "defenderSecurityConfiguration": {
+      "type": "string",
+      "defaultValue": "none",
+      "allowedValues": ["foundational", "standard", "none"],
+      "metadata": {
+        "description": "Optional Defender for Cloud configuration at the subscription scope. Foundational enables free Cloud Security Posture Management, standard enables Defender CSPM plus Defender plans for deployed Azure resources, and none leaves existing subscription Defender settings unchanged."
+      }
+    },
+    "sqlAdministratorLogin": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "metadata": {
+        "description": "SQL Server administrator login name (min 1 char, max 128)"
+      }
+    },
+    "sqlAdministratorPassword": {
+      "type": "securestring",
+      "minLength": 12,
+      "maxLength": 123,
+      "metadata": {
+        "description": "SQL Server administrator password (12-123 chars with uppercase, lowercase, number, and special character)"
+      }
+    },
+    "fabricCapacitySku": {
+      "type": "string",
+      "defaultValue": "",
+      "allowedValues": ["", "F2", "F4", "F8", "F16", "F32", "F64", "F128", "F256", "F512", "F1024", "F2048"],
+      "metadata": {
+        "description": "Optional Fabric capacity SKU override when deploying a new Fabric capacity. Leave blank to use the selected default."
+      }
+    },
+    "fabricCapacityAdministrators": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional list of Fabric capacity administrator identities"
+      }
+    },
+    "enableApiManagement": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Deploy Azure API Management (optional)"
+      }
+    },
+    "enableApiIngestionFunction": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy API ingestion Function App and storage"
+      }
+    },
+    "externalApiBaseUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional base URL for external API ingestion function"
+      }
+    },
+    "customerName": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Primary customer contact name for eGroup usage tracking and follow-up"
+      }
+    },
+    "customerEmail": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Primary customer contact email for eGroup usage tracking and follow-up"
+      }
+    },
+    "customerPhone": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional customer contact phone number for eGroup usage tracking and follow-up"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "solution": "DataFoundationAccelerator",
+        "version": "1.0.1",
+        "managed-by": "eGroup"
+      },
+      "metadata": {
+        "description": "Tags for all deployed resources"
+      }
+    }
+  },
+  "variables": {
+    "deploymentId": "[uniqueString(resourceGroup().id)]",
+    "deploymentTimestamp": "[parameters('deploymentTimestamp')]",
+    "installationId": "[guid(subscription().subscriptionId, resourceGroup().id, parameters('deploymentTimestamp'))]",
+    "generatedLicenseKey": "[toUpper(concat(substring(uniqueString(subscription().subscriptionId, resourceGroup().id), 0, 8), '-', substring(uniqueString(resourceGroup().name, parameters('deploymentTimestamp')), 0, 8), '-', substring(uniqueString(subscription().tenantId, parameters('resourceNamePrefix'), parameters('deploymentTier')), 0, 8)))]",
+    "installRegistrationWebhookUrl": "https://mktdata.enabledapp.com/api/register-installation",
+    "manifestBlobName": "[concat(variables('installationId'), '-manifest.json')]",
+    "deployFabricCapacity": "[not(equals(parameters('deploymentTier'), 'none'))]",
+    "deploymentStatusMessage": "[if(variables('deployFabricCapacity'), concat('Data Foundation Accelerator (', parameters('deploymentTier'), ' Fabric capacity) deployed successfully'), 'Data Foundation Accelerator deployed successfully without provisioning a new Fabric capacity')]",
+    "naming": {
+      "prefix": "[toLower(parameters('resourceNamePrefix'))]",
+      "environment": "[toLower(parameters('environment'))]",
+      "suffix": "[substring(variables('deploymentId'), 0, 4)]"
+    },
+    "resourceNames": {
+      "fabricCapacity": "[concat(variables('naming').prefix, variables('naming').environment, 'fabric')]",
+      "vnet": "[concat(variables('naming').prefix, '-', variables('naming').environment, '-vnet')]",
+      "csvStorageAccount": "[concat(variables('naming').prefix, variables('naming').environment, 'csv', variables('naming').suffix)]",
+      "keyVault": "[concat(variables('naming').prefix, '-', variables('naming').environment, '-kv-', variables('naming').suffix)]",
+      "sqlServer": "[concat(variables('naming').prefix, '-', variables('naming').environment, '-sql-', variables('naming').suffix)]",
+      "sqlDatabase": "[concat(variables('naming').prefix, '_', variables('naming').environment, '_db')]",
+      "apiManagement": "[concat(variables('naming').prefix, variables('naming').environment, 'api', variables('naming').suffix)]",
+      "apiIngestionFunction": "[concat(variables('naming').prefix, '-', variables('naming').environment, '-ingestfn')]"
+    },
+    "fabricTierConfigs": {
+      "none": {
+        "capacityUnits": 0,
+        "description": "Use an existing Fabric capacity or activate a Fabric portal trial separately"
+      },
+      "initial": {
+        "capacity": "F2",
+        "capacityUnits": 2,
+        "description": "Initial tier - F2 capacity"
+      },
+      "production": {
+        "capacity": "F4",
+        "capacityUnits": 4,
+        "description": "Production tier - F4 capacity (configurable F4+)"
+      }
+    },
+    "currentTierConfig": "[variables('fabricTierConfigs')[parameters('deploymentTier')]]",
+    "effectiveFabricCapacitySku": "[if(variables('deployFabricCapacity'), if(empty(parameters('fabricCapacitySku')), variables('currentTierConfig').capacity, parameters('fabricCapacitySku')), '')]",
+    "tagsWithTracking": "[union(parameters('tags'), json(concat('{\"eGroupInstallationId\": \"', variables('installationId'), '\", \"eGroupDeploymentTier\": \"', parameters('deploymentTier'), '\", \"deploymentTimestamp\": \"', variables('deploymentTimestamp'), '\"}')))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "pid-53251502-e2ca-4d03-bd6b-2b71bcc64926-partnercenter",
+      "properties": {
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "resources": []
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "fabric-capacity-deployment",
+      "condition": "[variables('deployFabricCapacity')]",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Microsoft Fabric Capacity provisioning"
+          },
+          "parameters": {
+            "capacityName": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 63,
+              "metadata": {
+                "description": "Name of the Fabric capacity. Must start with a lowercase letter and contain only lowercase letters or numbers."
+              }
+            },
+            "capacitySku": {
+              "type": "string",
+              "allowedValues": [
+                "F2",
+                "F4",
+                "F8",
+                "F16",
+                "F32",
+                "F64",
+                "F128",
+                "F256",
+                "F512",
+                "F1024",
+                "F2048"
+              ],
+              "metadata": {
+                "description": "SKU for Fabric capacity (for example F2, F4, F64)"
+              }
+            },
+            "fabricCapacityAdministrators": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Optional list of Fabric capacity administrator identities"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "capacityUnits": "[int(replace(parameters('capacitySku'), 'F', ''))]",
+            "defaultAdminIdentity": "[if(empty(deployer().userPrincipalName), deployer().objectId, deployer().userPrincipalName)]",
+            "defaultAdmin": "[if(empty(parameters('fabricCapacityAdministrators')), createArray(variables('defaultAdminIdentity')), parameters('fabricCapacityAdministrators'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Fabric/capacities",
+              "apiVersion": "2023-11-01",
+              "name": "[parameters('capacityName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('capacitySku')]",
+                "tier": "Fabric"
+              },
+              "properties": {
+                "administration": {
+                  "members": "[variables('defaultAdmin')]"
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "capacityId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Fabric/capacities', parameters('capacityName'))]"
+            },
+            "capacityName": {
+              "type": "string",
+              "value": "[parameters('capacityName')]"
+            },
+            "capacitySku": {
+              "type": "string",
+              "value": "[parameters('capacitySku')]"
+            },
+            "capacityUnits": {
+              "type": "int",
+              "value": "[variables('capacityUnits')]"
+            }
+          }
+        },
+        "parameters": {
+          "capacityName": {
+            "value": "[variables('resourceNames').fabricCapacity]"
+          },
+          "capacitySku": {
+            "value": "[variables('effectiveFabricCapacitySku')]"
+          },
+          "fabricCapacityAdministrators": {
+            "value": "[parameters('fabricCapacityAdministrators')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "virtual-network-deployment",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Virtual Network with private connectivity options"
+          },
+          "parameters": {
+            "vnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the virtual network"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "enablePrivateEndpoints": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable private endpoints for private connectivity"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "nsgName": "[concat(parameters('vnetName'), '-nsg')]",
+            "subnetName": "[concat(parameters('vnetName'), '-default')]",
+            "peSubnetName": "[concat(parameters('vnetName'), '-private-endpoints')]",
+            "addressSpace": "10.0.0.0/16",
+            "subnetPrefix": "10.0.1.0/24",
+            "peSubnetPrefix": "10.0.2.0/24"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2024-10-01",
+              "name": "[variables('nsgName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "DenyAllInbound",
+                    "properties": {
+                      "protocol": "*",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "*",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*",
+                      "access": "Deny",
+                      "priority": 4096,
+                      "direction": "Inbound"
+                    }
+                  },
+                  {
+                    "name": "AllowAllOutbound",
+                    "properties": {
+                      "protocol": "*",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "*",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*",
+                      "access": "Allow",
+                      "priority": 4096,
+                      "direction": "Outbound"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2024-10-01",
+              "name": "[parameters('vnetName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+              ],
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[variables('addressSpace')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[variables('subnetName')]",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefix')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+                      },
+                      "serviceEndpoints": [
+                        {
+                          "service": "Microsoft.Storage"
+                        },
+                        {
+                          "service": "Microsoft.Sql"
+                        },
+                        {
+                          "service": "Microsoft.KeyVault"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "[variables('peSubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[variables('peSubnetPrefix')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('nsgName'))]"
+                      },
+                      "privateEndpointNetworkPolicies": "[if(parameters('enablePrivateEndpoints'), 'Disabled', 'Enabled')]"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "vnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+            },
+            "vnetName": {
+              "type": "string",
+              "value": "[parameters('vnetName')]"
+            },
+            "subnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), variables('subnetName'))]"
+            },
+            "peSubnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), variables('peSubnetName'))]"
+            },
+            "subnetIds": {
+              "type": "array",
+              "value": "[createArray(resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), variables('subnetName')), resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), variables('peSubnetName')))]"
+            }
+          }
+        },
+        "parameters": {
+          "vnetName": {
+            "value": "[variables('resourceNames').vnet]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "enablePrivateEndpoints": {
+            "value": "[parameters('enablePrivateEndpoints')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "defender-security-deployment",
+      "condition": "[not(equals(parameters('defenderSecurityConfiguration'), 'none'))]",
+      "location": "[parameters('location')]",
+      "subscriptionId": "[subscription().subscriptionId]",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Defender for Cloud pricing configuration"
+          },
+          "parameters": {
+            "defenderSecurityConfiguration": {
+              "type": "string",
+              "allowedValues": [
+                "foundational",
+                "standard"
+              ],
+              "metadata": {
+                "description": "Defender for Cloud configuration to apply at the subscription scope"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "CloudPosture",
+              "properties": {
+                "pricingTier": "[if(equals(parameters('defenderSecurityConfiguration'), 'standard'), 'Standard', 'Free')]"
+              }
+            },
+            {
+              "condition": "[equals(parameters('defenderSecurityConfiguration'), 'standard')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "StorageAccounts",
+              "properties": {
+                "pricingTier": "Standard",
+                "subPlan": "DefenderForStorageV2"
+              }
+            },
+            {
+              "condition": "[equals(parameters('defenderSecurityConfiguration'), 'standard')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "SqlServers",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[equals(parameters('defenderSecurityConfiguration'), 'standard')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "KeyVaults",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[equals(parameters('defenderSecurityConfiguration'), 'standard')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "AppServices",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            },
+            {
+              "condition": "[equals(parameters('defenderSecurityConfiguration'), 'standard')]",
+              "type": "Microsoft.Security/pricings",
+              "apiVersion": "2025-10-01-preview",
+              "name": "Arm",
+              "properties": {
+                "pricingTier": "Standard"
+              }
+            }
+          ]
+        },
+        "parameters": {
+          "defenderSecurityConfiguration": {
+            "value": "[parameters('defenderSecurityConfiguration')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage-deployment",
+      "dependsOn": [
+        "virtual-network-deployment"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: CSV ingestion storage account"
+          },
+          "parameters": {
+            "csvStorageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the CSV storage account"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "enablePrivateEndpoints": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable private endpoints"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "storageAccountType": "Standard_LRS",
+            "csvContainers": [
+              "raw",
+              "ingestion",
+              "archive",
+              "function-host",
+              "function-data"
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2025-01-01",
+              "name": "[parameters('csvStorageAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "StorageV2",
+              "sku": {
+                "name": "[variables('storageAccountType')]"
+              },
+              "properties": {
+                "accessTier": "Hot",
+                "isHnsEnabled": true,
+                "networkAcls": {
+                  "bypass": "AzureServices",
+                  "defaultAction": "[if(parameters('enablePrivateEndpoints'), 'Deny', 'Allow')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2025-01-01",
+              "name": "[concat(parameters('csvStorageAccountName'), '/default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('csvStorageAccountName'))]"
+              ],
+              "properties": {
+                "changeFeed": {
+                  "enabled": false
+                },
+                "containerDeleteRetentionPolicy": {
+                  "enabled": false
+                },
+                "deleteRetentionPolicy": {
+                  "enabled": false
+                },
+                "isVersioningEnabled": false
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2025-01-01",
+              "name": "[concat(parameters('csvStorageAccountName'), '/default/', variables('csvContainers')[copyIndex()])]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('csvStorageAccountName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('csvStorageAccountName'), 'default')]"
+              ],
+              "copy": {
+                "name": "csvContainersCopy",
+                "count": "[length(variables('csvContainers'))]"
+              }
+            }
+          ],
+          "outputs": {
+            "csvStorageAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('csvStorageAccountName'))]"
+            },
+            "csvStorageAccountName": {
+              "type": "string",
+              "value": "[parameters('csvStorageAccountName')]"
+            },
+            "csvStorageEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', parameters('csvStorageAccountName'))).primaryEndpoints.blob]"
+            }
+          }
+        },
+        "parameters": {
+          "csvStorageAccountName": {
+            "value": "[variables('resourceNames').csvStorageAccount]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "enablePrivateEndpoints": {
+            "value": "[parameters('enablePrivateEndpoints')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "key-vault-deployment",
+      "dependsOn": [
+        "virtual-network-deployment"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Azure Key Vault for secrets and encryption management"
+          },
+          "parameters": {
+            "keyVaultName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "enablePrivateEndpoints": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable private endpoints"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "tenantId": "[subscription().tenantId]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2024-11-01",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "tenantId": "[variables('tenantId')]",
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "accessPolicies": [],
+                "enabledForDeployment": true,
+                "enabledForTemplateDeployment": true,
+                "enabledForDiskEncryption": false,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enablePurgeProtection": true,
+                "networkAcls": {
+                  "bypass": "AzureServices",
+                  "defaultAction": "[if(parameters('enablePrivateEndpoints'), 'Deny', 'Allow')]"
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "keyVaultId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            },
+            "keyVaultName": {
+              "type": "string",
+              "value": "[parameters('keyVaultName')]"
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))).vaultUri]"
+            }
+          }
+        },
+        "parameters": {
+          "keyVaultName": {
+            "value": "[variables('resourceNames').keyVault]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "enablePrivateEndpoints": {
+            "value": "[parameters('enablePrivateEndpoints')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "sql-database-deployment",
+      "dependsOn": [
+        "virtual-network-deployment",
+        "key-vault-deployment"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Azure SQL Database with tier-specific configurations"
+          },
+          "parameters": {
+            "sqlServerName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the SQL Server"
+              }
+            },
+            "sqlDatabaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the SQL Database"
+              }
+            },
+            "administratorLogin": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "metadata": {
+                "description": "SQL Server administrator login"
+              }
+            },
+            "administratorPassword": {
+              "type": "securestring",
+              "minLength": 12,
+              "maxLength": 123,
+              "metadata": {
+                "description": "SQL Server administrator password"
+              }
+            },
+            "deploymentTier": {
+              "type": "string",
+              "allowedValues": [
+                "none",
+                "initial",
+                "production"
+              ],
+              "metadata": {
+                "description": "Fabric capacity option used for database sizing defaults"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "tierConfigs": {
+              "none": {
+                "edition": "Basic",
+                "capacity": 5
+              },
+              "initial": {
+                "edition": "Standard",
+                "capacity": 10
+              },
+              "production": {
+                "edition": "Standard",
+                "capacity": 50
+              }
+            },
+            "currentTierConfig": "[variables('tierConfigs')[parameters('deploymentTier')]]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2025-01-01",
+              "name": "[parameters('sqlServerName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "administratorLogin": "[parameters('administratorLogin')]",
+                "administratorLoginPassword": "[parameters('administratorPassword')]",
+                "version": "12.0"
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2025-01-01",
+              "name": "[concat(parameters('sqlServerName'), '/', parameters('sqlDatabaseName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+              ],
+              "properties": {
+                "edition": "[variables('currentTierConfig').edition]",
+                "requestedServiceObjectiveName": "[if(equals(variables('currentTierConfig').edition, 'Basic'), 'Basic', 'S1')]",
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "maxSizeBytes": 1099511627776
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2025-01-01",
+              "name": "[concat(parameters('sqlServerName'), '/AllowAllAzureIps')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+              ],
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              }
+            }
+          ],
+          "outputs": {
+            "sqlServerId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+            },
+            "sqlServerName": {
+              "type": "string",
+              "value": "[parameters('sqlServerName')]"
+            },
+            "sqlServerFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))).fullyQualifiedDomainName]"
+            },
+            "sqlDatabaseName": {
+              "type": "string",
+              "value": "[parameters('sqlDatabaseName')]"
+            },
+            "sqlDatabaseId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers/databases', parameters('sqlServerName'), parameters('sqlDatabaseName'))]"
+            }
+          }
+        },
+        "parameters": {
+          "sqlServerName": {
+            "value": "[variables('resourceNames').sqlServer]"
+          },
+          "sqlDatabaseName": {
+            "value": "[variables('resourceNames').sqlDatabase]"
+          },
+          "administratorLogin": {
+            "value": "[parameters('sqlAdministratorLogin')]"
+          },
+          "administratorPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          },
+          "deploymentTier": {
+            "value": "[parameters('deploymentTier')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "api-management-deployment",
+      "condition": "[parameters('enableApiManagement')]",
+      "dependsOn": [
+        "virtual-network-deployment",
+        "storage-deployment"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: Azure API Management for data consumption governance"
+          },
+          "parameters": {
+            "apiManagementName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the API Management service"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "publisherEmail": "[concat('apim-', uniqueString(resourceGroup().id), '@egroup-us.com')]",
+            "publisherName": "eGroup Data Foundation"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ApiManagement/service",
+              "apiVersion": "2024-05-01",
+              "name": "[parameters('apiManagementName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Developer",
+                "capacity": 1
+              },
+              "properties": {
+                "publisherEmail": "[variables('publisherEmail')]",
+                "publisherName": "[variables('publisherName')]",
+                "virtualNetworkType": "None"
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/products",
+              "apiVersion": "2024-05-01",
+              "name": "[concat(parameters('apiManagementName'), '/data-consumption')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service', parameters('apiManagementName'))]"
+              ],
+              "properties": {
+                "displayName": "Data Consumption",
+                "description": "APIs for consuming data from the Data Foundation",
+                "subscriptionRequired": true,
+                "state": "published"
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/service/policies",
+              "apiVersion": "2024-05-01",
+              "name": "[concat(parameters('apiManagementName'), '/policy')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service', parameters('apiManagementName'))]"
+              ],
+              "properties": {
+                "value": "<policies><inbound><rate-limit calls=\"100\" renewal-period=\"60\" /><quota calls=\"10000\" renewal-period=\"2592000\" /></inbound></policies>",
+                "format": "xml"
+              }
+            }
+          ],
+          "outputs": {
+            "apiManagementName": {
+              "type": "string",
+              "value": "[parameters('apiManagementName')]"
+            },
+            "apiManagementId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ApiManagement/service', parameters('apiManagementName'))]"
+            },
+            "apiManagementGatewayUrl": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apiManagementName'))).gatewayUrl]"
+            }
+          }
+        },
+        "parameters": {
+          "apiManagementName": {
+            "value": "[variables('resourceNames').apiManagement]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "api-ingestion-function-deployment",
+      "condition": "[parameters('enableApiIngestionFunction')]",
+      "dependsOn": [
+        "storage-deployment"
+      ],
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "description": "Nested template: API ingestion Function App"
+          },
+          "parameters": {
+            "functionAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Function App"
+              }
+            },
+            "functionStorageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage account name for the Function App"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "externalApiBaseUrl": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Base URL for the external API"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags"
+              }
+            }
+          },
+          "variables": {
+            "functionPlanName": "[concat(parameters('functionAppName'), '-plan')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-11-01",
+              "name": "[variables('functionPlanName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+              },
+              "properties": {
+                "maximumElasticWorkerCount": 1
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-11-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "functionapp",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('functionPlanName'))]"
+              ],
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('functionPlanName'))]",
+                "siteConfig": {
+                  "appSettings": [
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('functionStorageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName')), '2025-01-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "dotnet"
+                    },
+                    {
+                      "name": "EXTERNAL_API_BASE_URL",
+                      "value": "[parameters('externalApiBaseUrl')]"
+                    }
+                  ]
+                },
+                "httpsOnly": true
+              }
+            }
+          ],
+          "outputs": {
+            "functionAppId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
+            },
+            "functionAppName": {
+              "type": "string",
+              "value": "[parameters('functionAppName')]"
+            },
+            "storageAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('functionStorageAccountName'))]"
+            },
+            "functionStorageAccountName": {
+              "type": "string",
+              "value": "[parameters('functionStorageAccountName')]"
+            },
+            "functionAppHostname": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName'))).defaultHostName]"
+            }
+          }
+        },
+        "parameters": {
+          "functionAppName": {
+            "value": "[variables('resourceNames').apiIngestionFunction]"
+          },
+          "functionStorageAccountName": {
+            "value": "[variables('resourceNames').csvStorageAccount]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "externalApiBaseUrl": {
+            "value": "[parameters('externalApiBaseUrl')]"
+          },
+          "tags": {
+            "value": "[variables('tagsWithTracking')]"
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(variables('resourceNames').keyVault, '/egroup-installation-id')]",
+      "dependsOn": [
+        "key-vault-deployment"
+      ],
+      "properties": {
+        "value": "[variables('installationId')]",
+        "attributes": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(variables('resourceNames').keyVault, '/egroup-license-key')]",
+      "dependsOn": [
+        "key-vault-deployment"
+      ],
+      "properties": {
+        "value": "[variables('generatedLicenseKey')]",
+        "attributes": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2024-11-01",
+      "name": "[concat(variables('resourceNames').keyVault, '/egroup-deployment-tier')]",
+      "dependsOn": [
+        "key-vault-deployment"
+      ],
+      "properties": {
+        "value": "[parameters('deploymentTier')]",
+        "attributes": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "post-deployment-install-registration",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "dependsOn": [
+        "fabric-capacity-deployment",
+        "virtual-network-deployment",
+        "storage-deployment",
+        "key-vault-deployment",
+        "sql-database-deployment",
+        "api-management-deployment",
+        "api-ingestion-function-deployment"
+      ],
+      "properties": {
+        "azPowerShellVersion": "10.4",
+        "timeout": "PT10M",
+        "cleanupPreference": "OnSuccess",
+        "retentionInterval": "P1D",
+          "arguments": "[concat('-WebhookUrl \"', variables('installRegistrationWebhookUrl'), '\" -InstallationId \"', variables('installationId'), '\" -LicenseKey \"', variables('generatedLicenseKey'), '\" -DeploymentTier \"', parameters('deploymentTier'), '\" -DeploymentTimestamp \"', variables('deploymentTimestamp'), '\" -SubscriptionId \"', subscription().subscriptionId, '\" -TenantId \"', subscription().tenantId, '\" -ResourceGroupId \"', resourceGroup().id, '\" -ResourceGroupName \"', resourceGroup().name, '\" -Region \"', parameters('location'), '\" -ManifestBlobName \"', variables('manifestBlobName'), '\"')]",
+        "environmentVariables": [
+          {
+            "name": "CUSTOMER_NAME",
+            "secureValue": "[parameters('customerName')]"
+          },
+          {
+            "name": "CUSTOMER_EMAIL",
+            "secureValue": "[parameters('customerEmail')]"
+          },
+          {
+            "name": "CUSTOMER_PHONE",
+            "secureValue": "[parameters('customerPhone')]"
+          },
+          {
+            "name": "SUBSCRIPTION_NAME",
+            "value": "[subscription().displayName]"
+          },
+          {
+            "name": "TENANT_NAME",
+            "value": "[tenant().displayName]"
+          },
+          {
+            "name": "FABRIC_CAPACITY_SKU",
+            "value": "[variables('effectiveFabricCapacitySku')]"
+          }
+        ],
+        "scriptContent": "param(\n  [string]$WebhookUrl,\n  [string]$InstallationId,\n  [string]$LicenseKey,\n  [string]$DeploymentTier,\n  [string]$DeploymentTimestamp,\n  [string]$SubscriptionId,\n  [string]$TenantId,\n  [string]$ResourceGroupId,\n  [string]$ResourceGroupName,\n  [string]$Region,\n  [string]$ManifestBlobName\n)\n\n$ErrorActionPreference = 'Stop'\n$payload = @{\n  installationId = $InstallationId\n  licenseKey = $LicenseKey\n  deploymentTier = $DeploymentTier\n  deploymentTimestamp = $DeploymentTimestamp\n  customerName = $env:CUSTOMER_NAME\n  customerEmail = $env:CUSTOMER_EMAIL\n  customerPhone = $env:CUSTOMER_PHONE\n  subscriptionId = $SubscriptionId\n  subscriptionName = $env:SUBSCRIPTION_NAME\n  tenantId = $TenantId\n  tenantName = $env:TENANT_NAME\n  resourceGroupId = $ResourceGroupId\n  resourceGroupName = $ResourceGroupName\n  fabricCapacitySku = $env:FABRIC_CAPACITY_SKU\n  region = $Region\n  manifestBlobName = $ManifestBlobName\n}\n\ntry {\n  $response = Invoke-RestMethod -Uri $WebhookUrl -Method Post -ContentType 'application/json' -Body ($payload | ConvertTo-Json -Depth 4 -Compress)\n  Write-Output \"Install registration completed for installationId: $InstallationId\"\n  if ($null -ne $response) {\n    Write-Output ($response | ConvertTo-Json -Depth 4 -Compress)\n  }\n}\ncatch {\n  Write-Warning \"Install registration call failed but deployment will continue: $($_.Exception.Message)\"\n}",
+        "forceUpdateTag": "[variables('deploymentTimestamp')]"
+      }
+    }
+  ],
+  "outputs": {
+    "deploymentStatus": {
+      "type": "string",
+      "value": "[variables('deploymentStatusMessage')]"
+    },
+    "installationId": {
+      "type": "string",
+      "value": "[variables('installationId')]",
+      "metadata": {
+        "description": "Generated installation identifier for eGroup tracking"
+      }
+    },
+    "deploymentTimestamp": {
+      "type": "string",
+      "value": "[variables('deploymentTimestamp')]",
+      "metadata": {
+        "description": "UTC timestamp recorded for this deployment"
+      }
+    },
+    "licenseKeySecretName": {
+      "type": "string",
+      "value": "egroup-license-key",
+      "metadata": {
+        "description": "Key Vault secret name that stores the generated eGroup license key"
+      }
+    },
+    "installationIdSecretName": {
+      "type": "string",
+      "value": "egroup-installation-id",
+      "metadata": {
+        "description": "Key Vault secret name that stores the generated installation identifier"
+      }
+    },
+    "fabricCapacityId": {
+      "type": "string",
+      "value": "[if(variables('deployFabricCapacity'), reference('fabric-capacity-deployment').outputs.capacityId.value, '')]",
+      "metadata": {
+        "description": "Resource ID of the deployed Fabric capacity, or empty when using an existing or Fabric portal trial capacity"
+      }
+    },
+    "fabricCapacityName": {
+      "type": "string",
+      "value": "[if(variables('deployFabricCapacity'), variables('resourceNames').fabricCapacity, '')]"
+    },
+    "csvStorageAccountId": {
+      "type": "string",
+      "value": "[reference('storage-deployment').outputs.csvStorageAccountId.value]",
+      "metadata": {
+        "description": "Resource ID of CSV storage account"
+      }
+    },
+    "csvStorageAccount": {
+      "type": "string",
+      "value": "[variables('resourceNames').csvStorageAccount]"
+    },
+    "csvStorageEndpoint": {
+      "type": "string",
+      "value": "[reference('storage-deployment').outputs.csvStorageEndpoint.value]",
+      "metadata": {
+        "description": "CSV storage primary blob endpoint"
+      }
+    },
+    "keyVaultId": {
+      "type": "string",
+      "value": "[reference('key-vault-deployment').outputs.keyVaultId.value]",
+      "metadata": {
+        "description": "Resource ID of Key Vault"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('resourceNames').keyVault]"
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "value": "[reference('key-vault-deployment').outputs.keyVaultUri.value]",
+      "metadata": {
+        "description": "Key Vault URI for secret references"
+      }
+    },
+    "sqlServerId": {
+      "type": "string",
+      "value": "[reference('sql-database-deployment').outputs.sqlServerId.value]",
+      "metadata": {
+        "description": "Resource ID of SQL Server"
+      }
+    },
+    "sqlServerName": {
+      "type": "string",
+      "value": "[variables('resourceNames').sqlServer]"
+    },
+    "sqlServerFqdn": {
+      "type": "string",
+      "value": "[reference('sql-database-deployment').outputs.sqlServerFqdn.value]",
+      "metadata": {
+        "description": "Fully qualified domain name of SQL Server"
+      }
+    },
+    "sqlDatabaseId": {
+      "type": "string",
+      "value": "[reference('sql-database-deployment').outputs.sqlDatabaseId.value]",
+      "metadata": {
+        "description": "Resource ID of SQL Database"
+      }
+    },
+    "sqlDatabaseName": {
+      "type": "string",
+      "value": "[variables('resourceNames').sqlDatabase]"
+    },
+    "vnetId": {
+      "type": "string",
+      "value": "[reference('virtual-network-deployment').outputs.vnetId.value]",
+      "metadata": {
+        "description": "Resource ID of Virtual Network"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "value": "[variables('resourceNames').vnet]"
+    },
+    "subnetIds": {
+      "type": "array",
+      "value": "[reference('virtual-network-deployment').outputs.subnetIds.value]",
+      "metadata": {
+        "description": "Array of subnet resource IDs"
+      }
+    },
+    "apiManagementName": {
+      "type": "string",
+      "value": "[variables('resourceNames').apiManagement]"
+    },
+    "apiIngestionFunctionName": {
+      "type": "string",
+      "value": "[variables('resourceNames').apiIngestionFunction]"
+    },
+    "apiIngestionStorageAccount": {
+      "type": "string",
+      "value": "[variables('resourceNames').csvStorageAccount]"
+    },
+    "namingConvention": {
+      "type": "string",
+      "value": "resource-specific CAF-compliant naming"
+    }
+  }
+}

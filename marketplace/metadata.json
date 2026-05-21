@@ -1,0 +1,136 @@
+{
+  "offer": {
+    "id": "data-foundation-accelerator",
+    "name": "Data Foundation Accelerator",
+    "publisher": "eGroup Enabling Technologies",
+    "version": "1.0.1"
+  },
+  "listing": {
+    "searchSummary": "Secure, governed data foundation on Azure - stand up analytics and AI infrastructure in minutes",
+    "shortDescription": "Deliver a secure, governed data foundation on Azure that makes priority data usable for analytics and AI",
+    "fullDescription": "The Data Foundation Accelerator provides a minimum viable modern data platform on Azure for analytics and AI workloads. The offer focuses on the assets that ship today: marketplace-driven deployment, current ARM templates, and sample artifacts for validation and ingestion patterns.\n\n### What's Included\n- Optional Microsoft Fabric capacity deployment with `none`, `initial`, and `production` paths\n- Virtual Network with optional private endpoints\n- Azure Data Lake Storage Gen2 with `raw`, `ingestion`, `archive`, `function-host`, and `function-data` containers\n- Azure Key Vault for secrets and deployment configuration\n- Azure SQL Database for governed relational data\n- Optional Defender for Cloud configuration at the subscription scope\n- Optional API ingestion Function App for external API collection\n- Optional API Management for governed downstream consumption\n\n### Deployment Model\n**None (Existing/Fabric Trial)** - Do not deploy a new Fabric capacity. Use an existing capacity or activate a Fabric trial separately.\n**Initial (F2)** - Deploy an F2 Fabric capacity with the rest of the foundation.\n**Production (F4-F2048)** - Deploy the same foundation with an F4 default and optional higher SKU override.\n\n### Operational Notes\n- Customer contact information is collected during deployment for installation tracking\n- Private endpoints, API ingestion, and API Management are optional\n- Documentation in this repository is limited to the current shipped offer and deployment assets",
+    "searchKeywords": [
+      "data platform",
+      "analytics",
+      "fabric",
+      "data lake",
+      "modern data stack",
+      "governed data",
+      "data foundation",
+      "ETL",
+      "data pipeline",
+      "Azure"
+    ],
+    "categories": [
+      "Data Services",
+      "Analytics"
+    ],
+    "industries": [
+      "Cross-Industry"
+    ],
+    "supportedRegions": [
+      "All Azure regions (service availability dependent)"
+    ]
+  },
+  "media": {
+    "logoSmall": "marketplace/logos/logo-48x48.png",
+    "logoMedium": "marketplace/logos/logo-90x90.png",
+    "logoLarge": "marketplace/logos/logo-216x216.png",
+    "logoExtraLarge": "marketplace/logos/logo-350x350.png",
+    "screenshots": [
+      {
+        "path": "marketplace/screenshots/fabric-architecture.png",
+        "caption": "Fabric overview"
+      }
+    ]
+  },
+  "contacts": {
+    "info": {
+      "email": "info@egroup-us.com",
+      "phone": "+18773476871",
+      "url": "https://www.egroup-us.com/"
+    },
+    "sales": {
+      "email": "sales@egroup-us.com",
+      "phone": "+18773476871",
+      "url": "https://www.egroup-us.com/"
+    },
+    "support": {
+      "email": "techops@egroup-us.com",
+      "url": "https://www.egroup-us.com/request-support/"
+    }
+  },
+  "pricing": {
+    "type": "Free",
+    "billingModel": "Pay-as-you-go (Azure consumption)",
+    "note": "Free marketplace offer. Customers pay for Azure resource consumption. eGroup provides managed services and support via separate engagement."
+  },
+  "legalAndCompliance": {
+    "privacyPolicyUrl": "https://www.egroup-us.com/privacy-statement-us/",
+    "termsOfUseUrl": "https://www.egroup-us.com/",
+    "license": "MIT",
+    "licenseUrl": "LICENSE"
+  },
+  "technicalAssets": {
+    "mainTemplate": "src/mainTemplate.json",
+    "createUiDefinition": "src/createUiDefinition.json",
+    "deploymentPackage": "src/",
+    "documentation": {
+      "readme": "README.md",
+      "deploymentGuide": "docs/deployment-guide.md",
+      "architecture": "docs/architecture.md",
+      "troubleshooting": "docs/troubleshooting.md",
+      "costEstimation": "docs/cost-estimation.md",
+      "support": "SUPPORT.md"
+    }
+  },
+  "marketplace": {
+    "plan": {
+      "id": "data-foundation-accelerator",
+      "displayName": "Data Foundation Accelerator",
+      "description": "Deploy a complete modern data platform with Fabric, storage, governance, and APIs",
+      "type": "Solution Template",
+      "availability": "public",
+      "leadManagement": "enabled"
+    }
+  },
+  "metadata": {
+    "createdDate": "2026-02-03",
+    "lastUpdatedDate": "2026-05-21",
+    "publisherName": "eGroup",
+    "publisherId": "1234567890",
+    "publisherWebsite": "https://www.egroup-us.com/",
+    "partnerCenterProfileUrl": "https://partner.microsoft.com/en-us/dashboard/marketplaceoffers",
+    "status": "Ready for Submission"
+  },
+  "notes": {
+    "certificationChecklist": [
+      "✓ ARM template validates (mainTemplate.json)",
+      "✓ createUiDefinition.json present and valid",
+      "✓ Logos provided (48x48, 90x90, 216x216, 350x350px)",
+      "✓ Screenshots provided (5 max, 1280x720px)",
+      "✓ README.md complete (>500 words)",
+      "✓ Deployment guide included",
+      "✓ Support contact information provided",
+      "✓ Privacy policy URL set",
+      "✓ Terms of use URL set",
+      "[ ] Video walkthrough (optional but recommended)",
+      "✓ Partner Center account verified",
+      "✓ Publisher profile complete",
+      "✓ Tax/payout setup completed"
+    ],
+    "submissionSteps": [
+      "1. Log in to Partner Center dashboard",
+      "2. Create new Azure Application offer",
+      "3. Set offer ID and name",
+      "4. Configure offer setup (enable lead management)",
+      "5. Configure plan (Solution Template)",
+      "6. Upload technical assets (this folder structure)",
+      "7. Add offer listing details (name, description, logos, screenshots)",
+      "8. Configure availability (regions, pricing)",
+      "9. Review offer setup",
+      "10. Submit for certification review"
+    ],
+    "estimatedCertificationTime": "10 business days"
+  }
+}
