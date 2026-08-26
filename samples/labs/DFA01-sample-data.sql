@@ -1,14 +1,6 @@
 -- DFA01 sample schema and seed data for spaceship-parts inventory + Fabric NLQ lab
 -- Run this script against your deployed Azure SQL Database.
 
-IF OBJECT_ID('dbo.SalesOrders', 'U') IS NOT NULL
-    DROP TABLE dbo.SalesOrders;
-GO
-
-IF OBJECT_ID('dbo.Customers', 'U') IS NOT NULL
-    DROP TABLE dbo.Customers;
-GO
-
 IF OBJECT_ID('dbo.SpaceshipPartsInventory', 'U') IS NOT NULL
     DROP TABLE dbo.SpaceshipPartsInventory;
 GO
