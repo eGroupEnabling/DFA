@@ -10,7 +10,7 @@ The solution provisions core Azure services for storage, security,
 networking, and relational data, with optional services for API ingestion,
 API governance, and Defender for Cloud configuration. When you choose the
 `none` capacity option, the deployment skips Fabric capacity creation so you
-can attach an existing capacity or activate a Fabric trial separately in the
+can attach an existing capacity or activate a [Fabric trial](https://learn.microsoft.com/en-us/fabric/fundamentals/fabric-trial) separately in the
 Fabric portal.
 
 ## Deploy To Azure
