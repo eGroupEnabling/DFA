@@ -71,6 +71,15 @@ foundation and the sample files in `samples/labs/`:
 - [DFA04: Power BI report walkthrough](docs/labs/DFA04-powerbi-report.md)
 - [DFA05: Cost monitoring walkthrough](docs/labs/DFA05-cost-monitoring.md)
 
+### Education Labs
+
+The following walkthroughs reuse the same DFA01 (SQL) and DFA02 (CSV to
+Lakehouse) workflows with education-specific sample data for K-12 and higher
+education institutions:
+
+- [EDU01: K-12 student information walkthrough](docs/labs/EDU01-k12-student-information.md)
+- [EDU02: Higher-ed student success walkthrough](docs/labs/EDU02-highered-student-success.md)
+
 ## Licensing
 
 This solution template is provided under the [MIT License](LICENSE).
